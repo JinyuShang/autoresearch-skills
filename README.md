@@ -1,28 +1,83 @@
 # AutoResearch Skills
 
-一组可复用的 AutoResearch 任务设计、运行隔离、质量审查和交接 skill。仓库只包含通用规则、参考文档与静态检查脚本，不包含真实任务包、对话记录、模型权重或私有平台附件。
+> 把研究智能体从“一次性 prompt”升级为可设计、可隔离、可审计、可交接的工程系统。
 
-## Skills
+[![CI](https://github.com/bosprimigenious/autoresearch-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/bosprimigenious/autoresearch-skills/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Skills](https://img.shields.io/badge/skills-6-7c3aed.svg)](skills)
+[![Tests](https://img.shields.io/badge/QA_tests-134-0f766e.svg)](skills/autoresearch-task-qa/scripts)
 
-- `autoresearch-optimization-surface`：判断研究任务是否具有真实方法空间，而非仅搜索固定超参数。
-- `autoresearch-baseline-quality`：审查 Baseline 的合理性、公平预算与可复现性。
-- `autoresearch-task-authoring`：把论文或代码仓整理成可交付的工程研究任务。
-- `autoresearch-run-isolation`：隔离多 Agent 运行、凭据、证据和有效时长。
-- `autoresearch-task-qa`：审查研究门槛、提交结构、Docker/Harbor 路径和成对证据。
-- `autoresearch-conversation-handoff`：生成可继续执行的跨 Agent 交接。
+AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Coding Agent 的完整作业体系：从判断问题是否值得优化，到建立可信 Baseline、设计任务、隔离并发运行、审查证据，再到把上下文结构化交给下一个 Agent。
 
-## 安装
+它解决的不是“怎样让 Agent 多跑几次”，而是更难也更重要的问题：**怎样让一次自动研究经得起复现、比较、审计与继续执行。**
 
-克隆仓库后，将需要的 skill 目录软链到工具的用户级 skill 目录。以 Codex 为例：
+```text
+研究空间        基线质量        任务设计        运行隔离        证据验收        跨 Agent 交接
+    │               │               │               │               │               │
+    └───────────────┴───────────────┴───────► 可复现的 AutoResearch 闭环 ◄─────────────┘
+```
+
+## 为什么是一个系统，而不是六份 Prompt
+
+- **先证明问题值得研究。** 区分真实方法空间与固定超参数搜索，避免把算力消耗包装成研究进展。
+- **把公平性写进流程。** Baseline、预算、指标、产物和复现条件在运行前明确，结果不能靠事后解释。
+- **证据优先，默认拒绝含糊结论。** QA 以结构化门禁检查提交、容器路径、平台接口和成对证据；缺证据就不能冒充完成。
+- **隔离不仅是目录隔离。** 同时约束运行环境、凭据、产物、时间和 Agent 上下文，降低并发研究互相污染的风险。
+- **交接面向继续执行。** 输出的是下一位 Agent 可以直接接手的状态、证据、阻塞和动作，而不是一段看似完整的总结。
+- **隐私是发布门禁。** 公开包、self-check、轨迹与附件逐件检查，不让“主包已脱敏”成为旁路泄露的借口。
+
+## 六个协同 Skill
+
+| Skill | 负责什么 | 核心产出 |
+|---|---|---|
+| [`autoresearch-optimization-surface`](skills/autoresearch-optimization-surface) | 判断任务是否存在足够的研究自由度 | 方法空间、固定项、可变项与反例 |
+| [`autoresearch-baseline-quality`](skills/autoresearch-baseline-quality) | 审查基线是否合理、公平、可复现 | Baseline 质量结论与修复清单 |
+| [`autoresearch-task-authoring`](skills/autoresearch-task-authoring) | 把论文或代码仓变成可执行的研究任务 | 任务契约、预算、指标、验收与交付结构 |
+| [`autoresearch-run-isolation`](skills/autoresearch-run-isolation) | 设计多 Agent 并发运行的隔离边界 | 工作区、凭据、产物与时限约束 |
+| [`autoresearch-task-qa`](skills/autoresearch-task-qa) | 对任务包和证据执行 fail-closed 审查 | 分层 QA 结论、失败项与可复核证据 |
+| [`autoresearch-conversation-handoff`](skills/autoresearch-conversation-handoff) | 把本轮研究交给下一位 Agent 继续 | 可执行交接包，而非叙述性摘要 |
+
+这些 Skill 可以独立使用，也可以按研究生命周期串联。推荐默认顺序：
+
+```text
+optimization-surface
+  → baseline-quality
+  → task-authoring
+  → run-isolation
+  → task-qa
+  → conversation-handoff
+```
+
+## 快速开始
+
+克隆仓库：
 
 ```sh
 git clone https://github.com/bosprimigenious/autoresearch-skills.git
-ln -s /absolute/path/autoresearch-skills/skills/autoresearch-task-qa ~/.codex/skills/autoresearch-task-qa
+cd autoresearch-skills
 ```
 
-不要复制多份后分别修改；选择一份工作树作为事实来源，其余工具目录使用软链。
+将需要的 Skill 软链到 Agent 的用户级 Skill 目录。以 Codex 为例：
 
-## 验证
+```sh
+ln -s "$PWD/skills/autoresearch-task-qa" \
+  ~/.codex/skills/autoresearch-task-qa
+```
+
+重启 Agent，让它重新发现 Skill。随后可以直接用自然语言提出任务，例如：
+
+```text
+检查这个研究任务是否真的存在优化空间，并指出伪研究自由度。
+审查这个 baseline 是否公平、可复现，缺什么证据就明确判失败。
+把这个代码仓整理成可以交给多个 Agent 隔离运行的研究任务。
+对交付包执行完整 QA，并生成下一位 Agent 能继续执行的交接。
+```
+
+仓库同时提供 `SKILL.md`、`AGENTS.md` 与 `CLAUDE.md` 派生格式，便于接入支持相应规则文件的 Coding Agent。不要复制多份后分别修改；选择一份工作树作为事实来源，其余目录使用软链。
+
+## 可执行验证
+
+项目不是靠 README 自证。仓库提供结构校验、静态 QA 与 134 个回归测试：
 
 ```sh
 python3 scripts/validate_skills.py
@@ -30,11 +85,38 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s skills/autoresearch-task-qa/scripts -p 'test_*.py'
 ```
 
-测试验证 skill 结构与静态 QA 逻辑，不代表外部 Harbor 平台、Docker 构建或真实训练已经运行成功。
+GitHub Actions 会在每次 push 和 pull request 上执行同一组检查。
 
-## 隐私边界
+## 证据边界
 
-公开材料必须逐件检查，不能用主包通过替代 self-check、轨迹或证据附件。详细门禁见 [`privacy-and-portability.md`](skills/autoresearch-task-qa/references/privacy-and-portability.md)。许可证、数据授权、真实身份信息和商业秘密仍需人工复核。
+这套仓库能够验证的是 Skill 结构、任务契约和静态 QA 逻辑。它**不会**把以下事项伪装成已经完成：
+
+- Docker 镜像确实能够构建并运行；
+- 外部研究平台或 Harbor 接口确实可用；
+- 真实训练已经完成并达到目标指标；
+- 数据、模型、许可证或第三方材料具备公开授权；
+- 静态扫描能够替代人工隐私与商业秘密复核。
+
+运行时成功必须由运行时证据证明；公开发布必须逐件检查主包、self-check、轨迹和证据附件。详细门禁见 [`privacy-and-portability.md`](skills/autoresearch-task-qa/references/privacy-and-portability.md)。
+
+## 仓库结构
+
+```text
+autoresearch-skills/
+├── skills/                  # 六个可组合的 AutoResearch Skill
+│   └── <skill>/
+│       ├── SKILL.md         # 唯一规则源
+│       ├── AGENTS.md        # Agent 兼容格式
+│       ├── CLAUDE.md        # Claude Code 兼容格式
+│       ├── agents/          # Agent 元数据
+│       ├── references/      # 规范、清单与方法参考
+│       └── scripts/         # 静态 QA 与测试（按需）
+├── scripts/
+│   └── validate_skills.py   # 仓库级结构校验
+└── .github/workflows/ci.yml # 持续集成门禁
+```
+
+仓库只包含通用规则、参考文档与静态检查代码，不包含真实任务包、对话记录、模型权重、凭据或私有平台附件。
 
 ## License
 
