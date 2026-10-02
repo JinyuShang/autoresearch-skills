@@ -1052,6 +1052,9 @@ class Auditor:
                 if isinstance(prefix, str) and (rel == prefix or rel.startswith(prefix.rstrip("/") + "/")):
                     return True
             return False
+        verifier = self.task_config.get("verifier") if isinstance(self.task_config, dict) else None
+        if isinstance(verifier, dict) and verifier.get("environment_mode") == "separate" and rel.startswith("harbor_task/tests/"):
+            return False
         return rel == "INIT_PROMPT.md" or rel.startswith("harbor_task/")
 
     def audit_isolation(self, instruction: str) -> None:
@@ -1075,7 +1078,7 @@ class Auditor:
         docker = self.text("harbor_task/environment/Dockerfile")
         docker_hidden = self.line_refs(
             "harbor_task/environment/Dockerfile",
-            r"^\s*(?:COPY|ADD)\s+.*(?:hidden|expert_evidence|reference|solution)",
+            r"^\s*(?:COPY|ADD)\s+.*(?:tests|hidden|expert_evidence|reference|solution)",
         )
         if hidden_files or docker_hidden:
             self.add(
@@ -1084,7 +1087,7 @@ class Auditor:
                 "blocker",
                 f"Agent 可见面中发现 {len(hidden_files)} 个 hidden 命名文件/资产，或 Docker COPY/ADD 泄露。",
                 hidden_files[:20] + docker_hidden,
-                "交付给 Agent 的树中保持 hidden_assets 为空；仅在 Agent 退出后的可信命名空间注入。",
+                "将非空 hidden_assets 仅构建进独立 Verifier 镜像；移除 Agent 镜像和可见面中的 tests/、隐藏集及评分实现。",
             )
         else:
             self.add(

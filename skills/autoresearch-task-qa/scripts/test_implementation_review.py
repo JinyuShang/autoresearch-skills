@@ -14,11 +14,26 @@ class ImplementationReviewTests(unittest.TestCase):
         self.root = Path(self.temp.name) / "artifact"
         self.root.mkdir()
         (self.root / "instruction.md").write_text("Hidden data is private. Do not access reference solutions.")
-        (self.root / "task.toml").write_text('[environment]\ndocker_image = "test-fixture:local"\n')
+        (self.root / "task.toml").write_text('artifacts = ["/workspace/solution"]\n[metadata]\nname = "fixture"\n[verifier]\nenvironment_mode = "separate"\n')
+        (self.root / "environment").mkdir()
+        (self.root / "environment/Dockerfile").write_text("FROM example:local\nWORKDIR /app\n")
         (self.root / "tests").mkdir()
+        (self.root / "tests/Dockerfile").write_text("FROM python:3.11-slim\nCOPY . /tests\n")
         (self.root / "tests/test.sh").write_text('mkdir -p /logs/verifier\necho 1 > /logs/verifier/reward.txt\n')
+        (self.root / "tests/hidden_assets").mkdir()
+        (self.root / "tests/hidden_assets/cases.json").write_text('{"cases": [1]}')
+        (self.root / "run-a/verifier").mkdir(parents=True)
+        (self.root / "run-a/config.json").write_text('{"task":{"path":"fixture"},"agent":{"name":"nop"}}')
+        (self.root / "run-a/result.json").write_text(json.dumps({"finished_at": "2026-09-08T06:00:00Z",
+            "exception_info": None, "agent_info": {"name": "nop"}, "verifier_environment_mode": "separate",
+            "verifier_result": {"rewards": {"reward": 0.0}}}))
+        (self.root / "run-a/verifier/reward.txt").write_text("0.0")
+        (self.root / "run-a/trial.log").write_text("Fixture verifier completed")
         for name in ("trajectory_a.json", "trajectory_b.json"):
-            (self.root / name).write_text('{"duration_seconds":43200}')
+            (self.root / name).write_text(json.dumps({"duration_seconds": 43200, "rounds": [
+                {"round": 1, "policy_name": "fixture", "method_summary": "Synthetic test fixture only.",
+                 "status": "ok", "score": 0.2, "failure_reason": None, "retained_best": True,
+                 "time": "2026-09-30 10:00:00"}]}))
 
     def tearDown(self):
         self.temp.cleanup()
@@ -88,7 +103,13 @@ class ImplementationReviewTests(unittest.TestCase):
             {"name": row["name"], "source_path": row["source_path"], "effective_seconds": 36000,
              "evidence": [row["source_path"]], "time_accounting": "总历时12h，扣除2h安装和排队后有效10h。"}
             for row in overview["trajectories"]]}
-        return {"checks": rows, "harbor": valid_review(), "overview": overview, "format_review": format_review,
+        harbor_review = valid_review()
+        harbor_review["trial_task_binding"] = {"summary": "Synthetic fixtures refer to this test task, not actual execution.",
+                                              "evidence": ["task.toml", "run-a/config.json", "run-a/trial.log"]}
+        harbor_review["checks"][4] = {"id": "H05", "status": "pass", "summary": "已复核 NOP Trial 配置。", "evidence": ["run-a/config.json"]}
+        harbor_review["checks"][5] = {"id": "H06", "status": "pass", "summary": "NOP Trial 在独立 Verifier 环境中结束。",
+                                      "evidence": ["run-a/config.json", "run-a/result.json", "run-a/verifier/reward.txt", "run-a/trial.log"]}
+        return {"checks": rows, "harbor": harbor_review, "overview": overview, "format_review": format_review,
                 "content_gates": {"schema_version": 1, "checks": gates}, "runtime_review": runtime}
 
     def test_initial_report_never_passes(self):
@@ -249,7 +270,8 @@ class ImplementationReviewTests(unittest.TestCase):
         self.assertLess(md.index("# 格式对齐建议"), md.index("# 质检结论：通过"))
         self.assertEqual(sum(line.startswith("| QA") for line in md.splitlines()), 21)
         self.assertTrue(report["review"]["completed"])
-        self.assertIn("Harbor 格式/接口：通过；未验证运行。", md)
+        self.assertIn("Harbor 格式/接口：通过；已有 Trial 证据经人工关联后相互一致", md)
+        self.assertEqual(report["harbor"]["runtime_status"], "evidence_consistent")
 
     def test_write_report_creates_identical_txt_and_markdown(self):
         out = self.root.parent / "out-rendered"
@@ -367,7 +389,54 @@ class ImplementationReviewTests(unittest.TestCase):
         review["checks"][16].update(remediation="补充该trial缺少的运行材料。", acceptance_evidence="同trial的config/result/reward/log。")
         result = qa.apply_review(self.report(), review, self.root)
         self.assertEqual(result["summary"]["decision"], "INCOMPLETE")
-        self.assertIn("运行证据待核实", qa.compact_markdown(result))
+        self.assertIn("运行或任务版本关联待核实", qa.compact_markdown(result))
+
+    def test_old_two_field_trajectory_cannot_be_overridden_by_pass(self):
+        self.write("trajectory_a.json", {"rounds": [{"round": 1, "method_summary": "Old format"}]})
+        result = qa.apply_review(self.report(), self.review(), self.root)
+        self.assertEqual(result["checks"][17]["status"], "fail")
+        self.assertEqual(result["checks"][20]["status"], "fail")
+        self.assertEqual(result["summary"]["decision"], "FAIL")
+
+    def test_malformed_selected_trajectory_cannot_pass(self):
+        (self.root / "trajectory_b.json").write_text('{"rounds":')
+        result = qa.apply_review(self.report(), self.review(), self.root)
+        self.assertEqual(result["checks"][20]["status"], "fail")
+
+    def test_eight_field_failure_with_null_score_is_valid(self):
+        value = json.loads((self.root / "trajectory_b.json").read_text())
+        value["rounds"][0].update(status="timeout", score=None, failure_reason="Timed out", retained_best=False)
+        self.write("trajectory_b.json", value)
+        result = qa.apply_review(self.report(), self.review(), self.root)
+        self.assertEqual(result["checks"][20]["status"], "pass")
+        self.assertEqual(result["checks"][17]["status"], "pass")
+
+    def test_unknown_trajectory_state_requires_review(self):
+        value = json.loads((self.root / "trajectory_b.json").read_text())
+        value["rounds"][0].update(status="custom-state", score=None, failure_reason="Needs interpretation", retained_best=False)
+        self.write("trajectory_b.json", value)
+        result = qa.apply_review(self.report(), self.review(), self.root)
+        self.assertEqual(result["checks"][20]["status"], "manual")
+        self.assertEqual(result["summary"]["decision"], "INCOMPLETE")
+
+    def test_explicitly_missing_trajectory_is_failure(self):
+        review = self.review()
+        review["overview"]["trajectories"][1].update(status="missing", source_path=None, evidence=[])
+        review["runtime_review"]["trajectories"][1]["source_path"] = None
+        result = qa.apply_review(self.report(), review, self.root)
+        self.assertEqual(result["checks"][17]["status"], "fail")
+        self.assertEqual(result["checks"][20]["status"], "fail")
+
+    def test_no_nop_does_not_fail_static_review(self):
+        import shutil
+        shutil.rmtree(self.root / "run-a")
+        review = self.review()
+        from test_harbor_review import valid_review
+        review["harbor"] = valid_review()
+        result = qa.apply_review(self.report(), review, self.root)
+        self.assertEqual(result["checks"][16]["status"], "pass")
+        self.assertEqual(result["harbor"]["runtime_status"], "not_run")
+        self.assertIn("动态运行未验证", qa.compact_markdown(result))
 
     def test_evidence_traversal_rejected(self):
         outside = self.root.parent / "outside.txt"

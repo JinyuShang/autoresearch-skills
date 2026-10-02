@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/bosprimigenious/autoresearch-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/bosprimigenious/autoresearch-skills/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Skills](https://img.shields.io/badge/skills-6-7c3aed.svg)](skills)
+[![Skills](https://img.shields.io/badge/skills-7-7c3aed.svg)](skills)
 [![Tests](https://img.shields.io/badge/tests-CI-0f766e.svg)](.github/workflows/ci.yml)
 
 AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Coding Agent 的完整作业体系：从判断问题是否值得优化，到建立可信 Baseline、设计任务、隔离并发运行、审查证据，再到把上下文结构化交给下一个 Agent。
@@ -17,9 +17,10 @@ AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Co
     └───────────────┴───────────────┴───────► 可复现的 AutoResearch 闭环 ◄─────────────┘
 ```
 
-## 为什么是一个系统，而不是六份 Prompt
+## 为什么是一个系统，而不是七份 Prompt
 
 - **先证明问题值得研究。** 区分真实方法空间与固定超参数搜索，避免把算力消耗包装成研究进展。
+- **先把论文候选变成证据账本。** 多源检索、规范化去重、源码许可、资源预算、评测与权威题库查重必须分别留证，限流或缺权限不能写成“没有重复”。
 - **把公平性写进流程。** Baseline、预算、指标、产物和复现条件在运行前明确，结果不能靠事后解释。
 - **证据优先，默认拒绝含糊结论。** QA 以结构化门禁检查提交、容器路径、平台接口和成对证据；缺证据就不能冒充完成。
 - **隔离不仅是目录隔离。** 同时约束运行环境、凭据、产物、时间和 Agent 上下文，降低并发研究互相污染的风险。
@@ -27,10 +28,11 @@ AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Co
 - **交接面向继续执行。** 输出的是下一位 Agent 可以直接接手的状态、证据、阻塞和动作，而不是一段看似完整的总结。
 - **隐私是发布门禁。** 公开包、self-check、轨迹与附件逐件检查；CI 额外阻断本机路径、私有协作链接、邮箱、内网地址和常见凭据形态。
 
-## 六个协同 Skill
+## 七个协同 Skill
 
 | Skill | 负责什么 | 核心产出 |
 |---|---|---|
+| [`autoresearch-paper-discovery`](skills/autoresearch-paper-discovery) | 多源找论文并在投入实现前做候选预检 | 候选账本、权威查重状态与推荐/补证/拒绝结论 |
 | [`autoresearch-optimization-surface`](skills/autoresearch-optimization-surface) | 判断任务是否存在足够的研究自由度 | 方法空间、固定项、可变项与反例 |
 | [`autoresearch-baseline-quality`](skills/autoresearch-baseline-quality) | 审查基线是否合理、公平、可复现 | Baseline 质量结论与修复清单 |
 | [`autoresearch-task-authoring`](skills/autoresearch-task-authoring) | 把论文或代码仓变成可执行的研究任务 | 任务契约、预算、指标、验收与交付结构 |
@@ -41,7 +43,8 @@ AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Co
 这些 Skill 可以独立使用，也可以按研究生命周期串联。推荐默认顺序：
 
 ```text
-optimization-surface
+paper-discovery
+  → optimization-surface
   → baseline-quality
   → task-authoring
   → run-isolation
@@ -87,6 +90,8 @@ python3 scripts/privacy_scan.py
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s skills/autoresearch-task-qa/scripts -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s skills/autoresearch-paper-discovery/scripts -p 'test_*.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s skills/autoresearch-run-isolation/scripts -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s scripts -p 'test_*.py'
@@ -110,7 +115,7 @@ GitHub Actions 会在每次 push 和 pull request 上执行同一组检查。
 
 ```text
 autoresearch-skills/
-├── skills/                  # 六个可组合的 AutoResearch Skill
+├── skills/                  # 七个可组合的 AutoResearch Skill
 │   └── <skill>/
 │       ├── SKILL.md         # 唯一规则源
 │       ├── AGENTS.md        # Agent 兼容格式

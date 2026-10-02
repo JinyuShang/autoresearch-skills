@@ -39,6 +39,9 @@ class SubmissionFormatTests(unittest.TestCase):
             encoding="utf-8",
         )
         (harbor / "task.toml").write_text('name = "fixture"\n', encoding="utf-8")
+        (harbor / "environment" / "Dockerfile").write_text("FROM example:local\n", encoding="utf-8")
+        (harbor / "tests" / "Dockerfile").write_text("FROM example:local\nCOPY . /tests\n", encoding="utf-8")
+        (harbor / "tests" / "hidden_assets" / "cases.json").write_text('{"cases": [1]}\n', encoding="utf-8")
         opt = root / "optimization_evidence"
         opt.mkdir()
         (opt / "训练证据说明.md").write_text("真实运行证据。\n", encoding="utf-8")
@@ -95,6 +98,21 @@ class SubmissionFormatTests(unittest.TestCase):
 
     def issue_codes(self, report):
         return {row["code"] for row in report["alignment_issues"]}
+
+    def trajectory_round(self, **changes):
+        row = {
+            "round": 1, "policy_name": "fixture-method",
+            "method_summary": "Synthetic schema fixture, not an actual Agent run.",
+            "status": "ok", "score": 0.23, "failure_reason": None,
+            "retained_best": True, "time": "2026-09-10 16:20:32",
+        }
+        row.update(changes)
+        return row
+
+    def write_trajectory(self, root, rounds, name="trajectory_codex.json"):
+        path = root / "expert_evidence" / name
+        path.write_text(json.dumps({"rounds": rounds}), encoding="utf-8")
+        return path
 
     def test_aligned_training_package_below_wrappers(self):
         package = self.make_package()
@@ -267,6 +285,151 @@ class SubmissionFormatTests(unittest.TestCase):
         self.assertIsNone(report["submission_root"])
         self.assertEqual(report["alignment_issues"][0]["code"], "INVALID_INPUT")
         self.assertEqual(report["issues"], report["alignment_issues"])
+
+    def test_hidden_folder_name_is_not_a_format_requirement(self):
+        root = self.make_package(seeds=(101,), task_type="non_training", with_models=False)
+        tests = root / "workspace" / "harbor_task" / "tests"
+        (tests / "hidden_assets").rename(tests / "private_fixtures")
+        self.assertEqual(fmt.collect(root)["status"], "aligned")
+
+    def test_generated_pca_hidden_without_static_assets_is_allowed_by_format(self):
+        root = self.make_package(seeds=(101,), task_type="non_training", with_models=False)
+        tests = root / "workspace" / "harbor_task" / "tests"
+        (tests / "hidden_assets" / "cases.json").unlink()
+        (tests / "hidden_assets").rmdir()
+        generated = tests / "grader_pkg" / "data"
+        generated.mkdir(parents=True)
+        (generated / "generate.py").write_text("# inspection fixture: never executed\n", encoding="utf-8")
+        report = fmt.collect(root)
+        self.assertEqual(report["status"], "aligned")
+        self.assertFalse(any("HIDDEN_ASSETS" in code for code in self.issue_codes(report)))
+
+    def test_empty_hidden_directory_needs_material_review_not_format_failure(self):
+        root = self.make_package(seeds=(101,))
+        hidden = root / "workspace" / "harbor_task" / "tests" / "hidden_assets"
+        (hidden / "cases.json").unlink()
+        self.assertEqual(fmt.collect(root)["status"], "aligned")
+
+    def test_optional_source_oracle_and_required_two_dockerfiles(self):
+        root = self.make_package(seeds=(101,))
+        harbor = root / "workspace" / "harbor_task"
+        (harbor / "solution").rmdir()
+        self.assertEqual(fmt.collect(root)["status"], "aligned")
+        (harbor / "tests" / "Dockerfile").unlink()
+        self.assertIn("MISSING_HARBOR_DOCKERFILE", self.issue_codes(fmt.collect(root)))
+
+    def test_complete_eight_field_trajectories_are_valid_without_extra_fields(self):
+        root = self.make_package(seeds=(101,))
+        for name in ("trajectory_codex.json", "trajectory_seed.json"):
+            self.write_trajectory(root, [
+                self.trajectory_round(),
+                self.trajectory_round(round=2, status="timeout", score=None,
+                    failure_reason="Synthetic timeout fixture.", retained_best=False,
+                    time="2026-09-10T16:25:32+08:00"),
+            ], name=name)
+        report = fmt.collect(root)
+        self.assertEqual(report["status"], "aligned")
+        for item in report["expert_evidence"]["trajectories"].values():
+            self.assertEqual(item["round_count"], 2)
+            self.assertTrue(item["format_valid"])
+
+    def test_each_of_eight_fields_is_required(self):
+        root = self.make_package(seeds=(101,))
+        for field in fmt.REQUIRED_TRAJECTORY_FIELDS:
+            with self.subTest(field=field):
+                row = self.trajectory_round()
+                del row[field]
+                path = self.write_trajectory(root, [row])
+                report = fmt.validate_trajectory(path, root)
+                self.assertIn("MISSING_TRAJECTORY_FIELDS", self.issue_codes(report))
+                self.assertFalse(report["format_valid"])
+
+    def test_invalid_field_values_are_reported(self):
+        root = self.make_package(seeds=(101,))
+        cases = [
+            {"round": True}, {"round": 0}, {"round": 1.5},
+            {"policy_name": ""}, {"method_summary": []}, {"status": False},
+            {"score": None}, {"score": True}, {"score": "0.5"},
+            {"failure_reason": "success with a failure reason"},
+            {"retained_best": "false"}, {"time": "2026-09-10"},
+            {"time": "2026-02-30 16:20:32"}, {"time": 123456},
+            {"status": "timeout", "failure_reason": None, "retained_best": False},
+            {"status": "failed", "failure_reason": "bad output", "retained_best": True},
+        ]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                path = self.write_trajectory(root, [self.trajectory_round(**changes)])
+                report = fmt.validate_trajectory(path, root)
+                self.assertIn("INVALID_TRAJECTORY_FIELD", self.issue_codes(report))
+                self.assertFalse(report["format_valid"])
+
+    def test_success_aliases_and_failure_with_actual_metric(self):
+        root = self.make_package(seeds=(101,))
+        for status in ("ok", "SUCCESS", "passed", "PASS", "Completed"):
+            with self.subTest(status=status):
+                path = self.write_trajectory(root, [self.trajectory_round(status=status)])
+                self.assertTrue(fmt.validate_trajectory(path, root)["format_valid"])
+        path = self.write_trajectory(root, [self.trajectory_round(
+            status="quality_gate_failed", score=0.1,
+            failure_reason="Synthetic gate failure.", retained_best=False,
+        )])
+        self.assertTrue(fmt.validate_trajectory(path, root)["format_valid"])
+
+    def test_unknown_status_requires_manual_interpretation(self):
+        root = self.make_package(seeds=(101,))
+        path = self.write_trajectory(root, [self.trajectory_round(status="custom_state")])
+        report = fmt.validate_trajectory(path, root)
+        self.assertEqual(report["status"], "manual")
+        self.assertEqual(self.issue_codes(report), {"TRAJECTORY_STATUS_REVIEW"})
+        self.assertEqual(report["alignment_issues"][0]["status"], "manual")
+
+    def test_large_trajectory_is_unreadable_not_a_claimed_format_failure(self):
+        root = self.make_package(seeds=(101,))
+        path = root / "expert_evidence" / "trajectory_codex.json"
+        path.write_bytes(b" " * (fmt.MAX_JSON_BYTES + 1))
+        report = fmt.validate_trajectory(path, root)
+        self.assertEqual(report["status"], "unreadable")
+        self.assertEqual(report["alignment_issues"][0]["status"], "manual")
+
+    def test_round_numbers_must_increase_without_duplicates(self):
+        root = self.make_package(seeds=(101,))
+        for numbers in ((1, 1), (2, 1)):
+            with self.subTest(numbers=numbers):
+                path = self.write_trajectory(root, [self.trajectory_round(round=n) for n in numbers])
+                self.assertIn("TRAJECTORY_ROUND_ORDER", self.issue_codes(fmt.validate_trajectory(path, root)))
+
+    def test_empty_rounds_are_incomplete_evidence(self):
+        root = self.make_package(seeds=(101,))
+        path = self.write_trajectory(root, [])
+        report = fmt.validate_trajectory(path, root)
+        self.assertEqual(report["status"], "incomplete")
+        self.assertIn("EMPTY_TRAJECTORY_ROUNDS", self.issue_codes(report))
+        self.assertEqual(json.loads(path.read_text())["rounds"], [])
+
+    def test_invalid_json_rounds_and_nonfinite_numbers_are_rejected(self):
+        root = self.make_package(seeds=(101,))
+        path = root / "expert_evidence" / "trajectory_codex.json"
+        for text, code in (
+            ("{", "INVALID_TRAJECTORY_JSON"),
+            ("[]", "INVALID_TRAJECTORY_JSON"),
+            ('{"rounds": {}}', "INVALID_TRAJECTORY_ROUNDS"),
+            ('{"rounds": [null]}', "INVALID_TRAJECTORY_ROUND"),
+            (json.dumps({"rounds": [self.trajectory_round(score=float("nan"))]}), "INVALID_TRAJECTORY_JSON"),
+            (json.dumps({"rounds": [self.trajectory_round(score=float("inf"))]}), "INVALID_TRAJECTORY_JSON"),
+        ):
+            with self.subTest(text=text):
+                path.write_text(text, encoding="utf-8")
+                self.assertIn(code, self.issue_codes(fmt.validate_trajectory(path, root)))
+
+    def test_equivalent_review_selected_name_and_missing_file(self):
+        root = self.make_package(seeds=(101,))
+        path = self.write_trajectory(root, [self.trajectory_round()], name="agent_a_records.json")
+        self.assertTrue(fmt.validate_trajectory(path, root)["format_valid"])
+        self.assertEqual(fmt.collect(root)["status"], "aligned")
+        report = fmt.validate_trajectory(path.with_name("not_here.json"), root)
+        self.assertEqual(report["status"], "missing")
+        self.assertIn("MISSING_TRAJECTORY", self.issue_codes(report))
+        self.assertEqual(report["alignment_issues"][0]["status"], "fail")
 
 
 if __name__ == "__main__":

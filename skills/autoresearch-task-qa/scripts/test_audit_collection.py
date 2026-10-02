@@ -71,8 +71,9 @@ class AuditCollectionTests(unittest.TestCase):
                   "runtime_review": {"status": "pass"},
                   "overview": {"baseline_reference": {"baseline_method": "linear", "reference_method": "feature transformation"}},
                   "content_gates": {"checks": [{"id": key, "status": "pass"} for key in ("G01", "G02", "G03")]},
-                  "harbor": {"static_status": "pass", "qa17_status": "pass", "runtime_status": "not_run",
-                             "checks": [{"id": f"H{i:02d}", "status": "pass" if i < 5 else "not_applicable"} for i in range(1, 7)],
+                  "harbor": {"static_status": "pass", "qa17_status": "pass", "runtime_status": "evidence_consistent",
+                             "checks": [{"id": f"H{i:02d}", "status": "pass" if i != 5 else "not_applicable"} for i in range(1, 7)],
+                             "artifact_contract": {"status": "pass"}, "hidden_review": {"status": "pass"},
                              "path_contract": {"status": "pass", "profile": "teaching-task-root-v1", "findings": []}}}
 
     def test_new_pass_requires_three_gates_and_runtime_review(self):
@@ -99,7 +100,7 @@ class AuditCollectionTests(unittest.TestCase):
 
     def test_harbor_runtime_and_checks_must_be_consistent(self):
         report = self.passing_report()
-        report["harbor"]["runtime_status"] = "evidence_consistent"
+        report["harbor"]["runtime_status"] = "not_run"
         self.assertIn("Harbor runtime_status disagrees with H06", COLLECTION.validate_report(report))
         report["harbor"]["checks"][2]["status"] = "manual"
         self.assertTrue(any("H01–H04" in issue for issue in COLLECTION.validate_report(report)))
@@ -117,6 +118,26 @@ class AuditCollectionTests(unittest.TestCase):
         self.assertIn("PASS contains unresolved manual Docker path contract", COLLECTION.validate_report(report))
         contract["adapter_evidence"] = ["adapter.json"]
         self.assertEqual(COLLECTION.validate_report(report), [])
+
+    def test_missing_optional_nop_does_not_fail_static_review(self):
+        report = self.passing_report()
+        report["harbor"]["checks"][5] = {"id": "H06", "status": "not_applicable", "evidence": []}
+        report["harbor"]["runtime_status"] = "not_run"
+        self.assertEqual(COLLECTION.validate_report(report), [])
+
+    def test_supplied_runtime_cannot_be_skipped(self):
+        report = self.passing_report()
+        report["harbor"]["checks"][5] = {"id": "H06", "status": "not_applicable", "evidence": ["run-a/config.json"]}
+        report["harbor"]["runtime_status"] = "not_run"
+        self.assertIn("H06 cannot skip supplied runtime evidence", COLLECTION.validate_report(report))
+
+    def test_artifact_or_hidden_review_cannot_be_hidden_by_static_pass(self):
+        report = self.passing_report()
+        report["harbor"]["artifact_contract"]["status"] = "fail"
+        report["harbor"]["hidden_review"]["status"] = "manual"
+        issues = COLLECTION.validate_report(report)
+        self.assertIn("PASS requires consistent submission artifact paths", issues)
+        self.assertIn("PASS requires reviewed Hidden supply and grading-use evidence", issues)
 
     def test_failed_incomplete_review_remains_valid_failure(self):
         report = self.passing_report()

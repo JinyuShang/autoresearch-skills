@@ -1,26 +1,28 @@
 # 来源、版本与适用范围
 
-使用本 skill 时先确认目标任务的当前规范、公开平台文档、包内配置和用户明确要求。来源冲突时记录裁定与依据，不以旧报告中的 `passed`、示例附件或已废弃文字覆盖当前有效规则。
+本公开版采用 QA schema v0.3.1。规则来源分为两类：目标版本的公开 Harbor 规范，以及经过脱敏后保留的任务验收契约。当前批准教程快照属于私有来源，不随公共 Skill 分发；其内部修订号、附件标识和协作链接不得写入公开文件，也不能作为外部用户可访问的证据。
 
-| 来源 | 采用内容 | 边界 |
-|---|---|---|
-| 当前任务规范 | 方法空间、Baseline/Reference、评分、预算与证据要求 | 必须记录具体版本或日期；不同项目不得直接复用 |
-| 公开 Harbor 文档及目标版本源码 | Task/Job/Trial、provider、配置和 reward 接口 | 文档静态核对不等于目标平台已部署 |
-| 包内示例与适配材料 | 文件布局、构建上下文、入口和字段映射 | 示例只能证明其自身结构，不能充当平台运行证书 |
-| 用户本轮明确要求 | 允许的调整、验证范围、费用和外部操作授权 | 不扩张到未授权执行或发布 |
+## 当前契约
 
-## 默认审查口径
+- 对外验收所用的期次、题号和记录主键必须在提交时重新从当前期次的权威题库或验收表读取，并保留可复核的记录定位信息。旧期表、本地文件夹名、压缩包名或历史报告不能代替当期题号；权威表不可达或权限不足时，对外填报状态为 `INCOMPLETE`，不猜测、不沿用。
+- Agent 与 Verifier 分别以 `environment/Dockerfile`、`tests/Dockerfile` 构建，并显式设置 `[verifier] environment_mode = "separate"`。
+- 公开 Dev 评测必须供 Agent 迭代；最终私有 Hidden 材料留在独立 Verifier。Hidden 可采用预置、可复现生成或安全注入，但必须有材料、实现和真实调用证据，不能用空目录或目录名代替。
+- NOP 是推荐自检而非必交项。缺少 NOP 不单独失败；一旦提供 NOP 或其他 Trial，就必须核对同一 Trial 的配置、结果、reward、日志、任务版本和 separate 运行证据。NOP 分数本身不决定结论。
+- 源码 `solution/` 是可选 Oracle；它与 Agent 的运行时提交目录不是同一概念。
+- 两条 Agent 轨迹每轮包含八字段：`round`、`policy_name`、`method_summary`、`status`、`score`、`failure_reason`、`retained_best`、`time`。旧两字段轨迹不再满足契约，人工填写 pass 也不能覆盖格式反证。
 
-- 随机评估采用正式 Baseline 的样本标准差检查改善强度；3σ 可作为默认最低证据门槛，5σ 只作为更强证据，不自动替代任务明确阈值。
-- 确定性评估要求真实正向改善、有效归一化范围和任务预先声明的容差，不引入统一的百分比门槛。
-- 两条 Agent 轨迹的有效时长分别计算，不能相加；排队、安装、阻塞和未闭合窗口不计。若项目规定例外，必须有明确适用条件和完整证据。
-- Starter、正式 Baseline 与评分锚点角色分开。允许 scaffold 或合理 naive Starter，但正式 Baseline 必须可运行、可解释且比较公平。
-- 可改文件的示例名称不等于只允许修改数字；检查真实接口、guard 和执行调用链。只有固定框架中的常量搜索不构成方法级优化面。
-- task-root 构建上下文与原生 Harbor `environment/` 上下文是两种 profile，必须根据实际 provider 和 COPY 路径选择，不能混用。
-- 两条简化轨迹可以只记录 round 与 method summary；模型、有效时长和结果应从运行摘要及原始证据交叉核对。
+## 研究质量裁定
 
-## 静态覆盖边界
+- 随机评估采用 Baseline 样本标准差：3σ 是最低改善门槛，3–5σ 可接受并建议复核，5σ 以上是强证据。确定性评估使用真实正向改善、归一化范围和任务预声明容差，不恢复统一 5% 规则。
+- 两条 Agent 轨迹默认各至少 10h 有效迭代；各 7h 例外仅适用于不涉及训练或微调、单轮迭代很短且证据完整的任务。排队、安装、构建故障和阻塞不计。
+- Baseline 默认来自未经修改的 Starter；无 method 的 Scaffold 或合理 naive Starter 也可接受，但必须可运行、可解释、公平，并明确映射到评价锚点。
+- 固定框架里的常量或超参数搜索不构成开放优化面；能够实现新方法的接口不能仅因某个参考实现改动较小就自动判为纯调参。
+- Headroom 原则用于风险复核，不升级成未声明的一刀切门槛。
 
-平台完整要求与自动静态质检分开表述。QA07/08 只检查题面泄露，QA15 不冒充资源上限验证；平台仍负责 Hidden 正式运行、完整物理隔离和资源稳定性。Baseline 预算公平、可机检硬约束和构建接入分别由对应内容门、QA 项和 Harbor 子项审查。
+## 公开依据与静态边界
 
-格式扩展只要等价、路径有效、证据完整就不自动失败；必需字段缺失和真实调用失败不能用“允许扩展”豁免。每次审查都应引用待检材料和公开来源，不能把本说明当作任务已经运行的证据。
+Harbor 相关语义优先核对目标版本的官方 [Environment](https://docs.harborframework.com/core-concepts/tasks/environment)、[Verifier](https://docs.harborframework.com/core-concepts/tasks/verifier)、[Configuration](https://docs.harborframework.com/core-concepts/tasks/configuration)、[Separate verifier](https://docs.harborframework.com/core-concepts/tasks/separate-verifier) 和 [官方仓库](https://github.com/harbor-framework/harbor)。`main` 分支不自动等同于已部署版本，报告必须写明读取版本或日期。
+
+平台完整要求与自动静态质检的覆盖范围分开写。QA07/08 只检查题面泄露，QA15 不审平台资源上限；这不代表完整物理隔离、资源限制或稳定性已通过。Skill 可检查已有 Trial 证据，默认不执行未知代码、不构建镜像，也不冒充完成动态验收。
+
+格式扩展只要等价、路径有效、证据完整就不自动扣错；必需字段缺失、真实路径错误和调用失败不能用“允许扩展”豁免。所有报告和附件继续受 [隐私与可移植性门禁](privacy-and-portability.md)约束。

@@ -17,7 +17,7 @@ import shutil
 import tempfile
 
 from harbor_review import collect as collect_harbor, apply_review as apply_harbor_review, summary as harbor_summary
-from submission_format import collect as collect_submission_format
+from submission_format import collect as collect_submission_format, validate_trajectory
 from content_gates import empty as empty_content_gates, apply_review as apply_content_review, assess_runtime
 
 TITLES = [
@@ -519,6 +519,18 @@ def apply_review(report, review, root):
     harbor = apply_harbor_review(report["harbor"], review.get("harbor"), root)
     report["harbor"] = harbor
     report["overview"] = validate_overview(review.get("overview"), root)
+    # Validate the two reviewed source paths, not only preferred filenames.
+    # A handwritten pass must not override malformed or missing round evidence.
+    trajectory_validation = []
+    for row in report["overview"]["trajectories"]:
+        if row["status"] in ("missing", "unreadable"):
+            status = "fail" if row["status"] == "missing" else "manual"
+            trajectory_validation.append({"path": row.get("source_path"), "status": row["status"],
+                "alignment_issues": [{"status": status, "message": row["name"] + "：轨迹" + ("缺失" if status == "fail" else "不可读取"),
+                                      "code": "MISSING_TRAJECTORY" if status == "fail" else "TRAJECTORY_UNREADABLE"}]})
+        else:
+            trajectory_validation.append(validate_trajectory(root / row["source_path"], root))
+    report["format_alignment"]["reviewed_trajectories"] = trajectory_validation
     report["content_gates"] = apply_content_review(review.get("content_gates"), report["overview"], root, review_evidence)
     report["runtime_review"] = assess_runtime(review.get("runtime_review"), report["overview"]["trajectories"], root, review_evidence)
     report["format_alignment"]["review"] = validate_format_review(review.get("format_review"))
@@ -574,6 +586,16 @@ def apply_review(report, review, root):
                 result[field] = row.get(field, "")
                 if status in ("fail", "manual"):
                     result[field] = nonempty_text(result[field], check_id + "." + field)
+            if check_id in ("QA18", "QA21"):
+                defects = [issue for observation in trajectory_validation for issue in observation["alignment_issues"]]
+                if defects:
+                    computed = "fail" if any(x["status"] == "fail" for x in defects) else "manual"
+                    if result["status"] != "fail":
+                        result["status"] = computed
+                    result["summary"] = "两条轨迹的八字段证据未通过：" + "；".join(x["message"] for x in defects[:2])
+                    result["evidence"] = list(dict.fromkeys(evidence + [x["path"] for x in trajectory_validation if x.get("present")]))
+                    result["remediation"] = "补齐两条真实轨迹，每轮八字段须完整有效；保留失败原因，不补造分数、时间或轮次。自定义状态需说明其语义。"
+                    result["acceptance_evidence"] = "overview.source_path 指向两份可读取轨迹，轮次及八字段符合教程，并与运行摘要和最佳方法记录一致。"
             final.append(result)
     report["checks"] = final
     report["harbor"] = harbor
