@@ -1,6 +1,6 @@
 import unittest
 
-from plan_capacity import estimate
+from plan_capacity import estimate, estimate_api_mode
 from preflight import validate as validate_contract
 from verify_lineage import validate as validate_lineage
 
@@ -10,6 +10,19 @@ class ToolTests(unittest.TestCase):
         result = estimate(10, 100, 2, 23, 5, 1, 0.5, 80)
         self.assertEqual(result["expected_reacquisition_loss"], 40)
         self.assertEqual(result["arithmetic_recommendation"], "hybrid")
+        self.assertEqual(result["hourly_reacquisition_break_even_probability"], 0)
+
+    def test_capacity_reports_hourly_risk_break_even(self):
+        result = estimate(3, 100, 1, 20, 0, 0, 0.2, 100)
+        self.assertEqual(result["hourly_reacquisition_break_even_probability"], 0.37)
+
+    def test_api_mode_chooses_eligible_plan(self):
+        result = estimate_api_mode(1000, 0.2, 100, 1000, 0.3, True)
+        self.assertEqual(result["arithmetic_recommendation"], "plan")
+
+    def test_api_mode_rejects_ineligible_plan(self):
+        result = estimate_api_mode(1000, 0.2, 50, 1000, 0.3, False)
+        self.assertEqual(result["arithmetic_recommendation"], "payg")
 
     def test_preflight_rejects_placeholders(self):
         errors = validate_contract({"task_id": "todo", "tracks": ["same", "same"]})
