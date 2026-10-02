@@ -99,6 +99,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
 
 GitHub Actions 会在每次 push 和 pull request 上执行同一组检查。
 
+`privacy_scan.py` 是 fail-closed 的公开发布门禁：除普通文本外，它会递归检查 ZIP、DOCX、PPTX、XLSX、ODF、JAR 与 wheel 的成员路径和内容，提取不透明二进制中的 ASCII/UTF-16 元数据，并阻断敏感文件名、凭据赋值、私有协作链接和带签名参数的 capability URL。损坏、加密、超限、嵌套过深或含符号链接的归档不会被静默跳过。诊断只输出类别、脱敏位置和行号，不输出命中值。`example.com` 邮箱、环境变量引用和 `YOUR_API_KEY` 一类显式占位符保留为合法公共示例；占位符不能用于豁免归档结构错误。
+
 ## 证据边界
 
 这套仓库能够验证的是 Skill 结构、任务契约和静态 QA 逻辑。它**不会**把以下事项伪装成已经完成：

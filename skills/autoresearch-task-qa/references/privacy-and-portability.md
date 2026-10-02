@@ -17,8 +17,11 @@
 
 - 私钥、API/token、Cookie、Bearer/JWT、密码或凭据字段；
 - `id_rsa`、`id_ed25519`、`.env`、私有证书等敏感文件；
+- `.aws/credentials`、`.kube/config`、`.docker/config.json`、`.netrc` 等用户级认证配置；
 - `$HOME` 展开后的作者机器绝对路径及 Windows 用户目录；
 - 带 file token 的飞书/Lark 私有文件链接，或未经确认可公开的 capability URL；
+- URL authority 或查询参数中的密码、token、签名、credential 与临时下载授权；
+- Office `creator`、`lastModifiedBy`、`Company`、`Manager` 等作者/组织元数据；
 - 报告中的绝对 `source.path`、`workspace_root`、`inspected_root`、`submission_root`。
 - 严格模式命中的邮箱、组织内部域名、SSH/SCP 端点和 RFC1918 私网地址；若确需公开，先从严格扫描的输入中拆出并记录人工授权，不得静默忽略。
 
@@ -28,7 +31,11 @@
 
     python3 scripts/protocol.py privacy-check --strict /absolute/path/to/artifact
 
-严格元数据规则只检查文本内容；模型、图片等二进制仍检查敏感文件名、凭据和首个 1 MiB，不把随机二进制字节误报为邮箱或 IP。
+仓库级严格扫描会递归打开 ZIP、DOCX、PPTX、XLSX、ODF、JAR 和 wheel，检查每个成员的路径、文本与不透明二进制中的可打印 ASCII/UTF-16 片段。归档损坏、加密、超出成员数/解压大小上限、嵌套过深、含符号链接或成员无法读取时一律阻断，不得把“无法检查”当作通过。普通大文件超过安全读取上限也阻断，需拆分、移出发布物或使用经过审计的专用扫描流程。
+
+诊断位置本身也可能含用户名或凭据，因此输出器必须在打印前检查并哈希替换敏感路径段。测试夹具同样不得把秘密样例写进日志；构造测试值时只断言分类与脱敏结果。
+
+允许的公共占位符仅包括环境变量引用、尖括号/模板变量、`YOUR_API_KEY`、`REDACTED` 等明确不可用值，以及 `example.com` / `example.org` / `example.net` 保留域邮箱。它们只避免示例误报，不能豁免私有 URL、敏感文件名、损坏或不可读取的归档。
 
 ## 修复与重建
 
@@ -49,7 +56,7 @@
 
 ## 完成标准
 
-1. 每个外发文件有独立的严格隐私扫描结果，扫描器覆盖大文本和 ZIP 文本成员。
+1. 每个外发文件有独立的严格隐私扫描结果，扫描器覆盖文本、二进制可打印元数据及支持的 ZIP 容器全部成员。
 2. 凭据值不在报告、日志、命令行或测试快照中出现。
 3. 自检报告只保存相对路径或脱敏逻辑路径。
 4. 私钥和私有配置位于项目树外，或被 Git、打包白名单和远端备份三层同时排除。
