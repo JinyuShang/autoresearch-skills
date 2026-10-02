@@ -8,6 +8,8 @@
 
 把指标、阈值、随机性协议、两条轨迹、开发环境、目标 Harness、持久快照与停止条件写入 JSON 合同，并在租卡前运行 `scripts/preflight.py`。GPU 任务还必须记录目标 backend 当前版本的能力依据。
 
+第三方服务器声称内置 Docker 时，先用 `scripts/docker_host_preflight.py` 检查 daemon、Compose、存储和可选 NVIDIA runtime，再分别取得 Agent 镜像、Verifier 镜像和容器内 GPU 的动态 probe。宿主有 Docker 不能替代两条隔离 lane、双镜像构建或目标 Harness 的完整 trial 证据。
+
 每轮保存原始 RPC、命令、评测摘要、receipt 和来源哈希。每个正式结果只绑定一个真实 run/trial；源码、配置、seed、receipt、artifact、checkpoint 与时间窗不得跨轮拼接。可用 `scripts/verify_lineage.py` 检查结构化索引。
 
 有效时长以闭合 turn 窗口为基础，未闭合、排队、安装、阻塞、睡眠和故障不计。两条轨迹分别达门槛，不能相加。单 GPU 默认串行训练/评分；只有显式绑定不同设备且协议允许时才并行，避免资源竞争污染结果。

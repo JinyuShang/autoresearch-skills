@@ -11,6 +11,19 @@
 
 `assets/compose.yaml` 是普通 NVIDIA Docker 主机的开发模板。`lane-a`、`lane-b` 和 `evaluate` 是互斥 profile；单卡时由受信控制层一次只启动一个 profile，不能执行无 profile 的全量并发启动。运行前至少执行 Compose 配置解析、容器内 GPU 可见性和真实最小前后向；这些结果不能替代目标 Harness 的 parser/build/trial/verifier/reward 链。
 
+## 服务器内置 Docker 的接管顺序
+
+“服务器已装 Docker”只省去安装步骤，不代表任务环境已经可用。先在目标服务器运行 `python3 scripts/docker_host_preflight.py --requires-gpu --out docker-host.json`，再按以下顺序留证：
+
+1. 核对 Docker daemon、Compose plugin、Docker root 可用空间和 NVIDIA runtime；静态预检失败就不拉大镜像。
+2. 分别构建 Agent 与 Verifier 镜像，记录 Dockerfile、context 和最终 image digest。不能因为二者共用基础镜像就合成一个包含 Hidden/Reference 的镜像。
+3. 用两个不同可写卷和控制目录启动 `lane-a`、`lane-b`，验证不能读取 peer 卷、宿主凭据或可信评测目录。
+4. 在每个 Agent 镜像内做入口、保存/重载和网络策略 smoke；GPU 任务还要在容器内完成真实最小前后向，而不只看宿主 `nvidia-smi`。
+5. Agent 结束后才把最终产物移交给独立 Verifier，跑一条完整 parser → trial → verifier → reward 链并保存 receipt。
+6. 在释放实例前把镜像 digest、合同、轨迹、checkpoint 和 receipt 同步到机外，并从新容器恢复一次。
+
+内置环境若只有 Docker CLI、daemon 权限不足、空间不够、没有 GPU runtime、Compose 版本不兼容或无法拉取固定 digest，均应在正式计费前失败关闭。`docker_host_preflight.py` 是只读宿主检查；它不会构建或启动不受信任务，也不能替代第 2–6 步的动态证据。
+
 平台或 Harbor 的 backend 支持会变化。Harbor 当前公开任务格式允许声明 `gpus`/`gpu_types`，Docker 环境也可读取 Dockerfile、镜像或 Compose，但资源执行方式随 provider 而异，许多云 sandbox 只接受 Dockerfile。每次固定目标版本与 provider，检查安装版本的命令帮助和官方文档；不能凭旧示例推定 GPU、Compose、挂载、工作目录或 reward 路径仍相同。Oracle 证明 reference solution 与 verifier 正向闭环，Starter/负例检查平凡满分和 reward hack，真实 Agent Trial 才证明实际 agent 路径。
 
 ## 外部依据

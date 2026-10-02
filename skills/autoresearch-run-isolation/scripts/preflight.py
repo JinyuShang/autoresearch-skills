@@ -38,6 +38,12 @@ def validate(contract: dict[str, object]) -> list[str]:
         errors.append("improvement_threshold must be a positive number")
     if contract.get("requires_gpu") is True and missing_or_placeholder(contract.get("backend_gpu_evidence")):
         errors.append("GPU runs require backend_gpu_evidence for the target version")
+    if contract.get("server_provides_docker") is True:
+        for key in ("docker_host_preflight", "agent_image_probe", "verifier_image_probe"):
+            if missing_or_placeholder(contract.get(key)):
+                errors.append(f"built-in Docker requires {key}")
+        if contract.get("requires_gpu") is True and missing_or_placeholder(contract.get("container_gpu_probe")):
+            errors.append("GPU Docker runs require container_gpu_probe")
     return errors
 
 

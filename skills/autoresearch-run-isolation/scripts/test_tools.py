@@ -1,8 +1,11 @@
 import unittest
+from unittest.mock import patch
+import subprocess
 
 from plan_capacity import estimate, estimate_api_mode
 from preflight import validate as validate_contract
 from verify_lineage import validate as validate_lineage
+from docker_host_preflight import inspect_host
 
 
 class ToolTests(unittest.TestCase):
@@ -45,6 +48,40 @@ class ToolTests(unittest.TestCase):
             "stop_loss": "stop after two failed pilots",
         }
         self.assertEqual(validate_contract(contract), [])
+
+    def test_preflight_rejects_unproven_builtin_docker(self):
+        contract = {
+            "task_id": "public-task",
+            "metric_name": "score",
+            "metric_direction": "maximize",
+            "improvement_threshold": 1,
+            "randomness_protocol": "fixed paired seeds",
+            "tracks": ["lane-a", "lane-b"],
+            "development_runtime": "server Docker",
+            "target_harness": "pinned backend",
+            "persistent_snapshot": "off-host snapshot",
+            "stop_loss": "stop after failed pilot",
+            "server_provides_docker": True,
+        }
+        errors = validate_contract(contract)
+        self.assertTrue(any("docker_host_preflight" in error for error in errors))
+        self.assertTrue(any("agent_image_probe" in error for error in errors))
+
+    def test_docker_host_preflight_keeps_dynamic_boundary(self):
+        outputs = {
+            ("docker", "version", "--format", "{{json .Server}}"): '{"Version":"1"}',
+            ("docker", "compose", "version", "--short"): "2.0",
+            ("docker", "info", "--format", "{{json .}}"): '{"DockerRootDir":"/tmp","Runtimes":{"runc":{}}}',
+        }
+
+        def runner(argv):
+            return subprocess.CompletedProcess(argv, 0, outputs[tuple(argv)], "")
+
+        with patch("docker_host_preflight.shutil.disk_usage") as usage:
+            usage.return_value.free = 100 * 1024**3
+            report = inspect_host(False, 50, runner)
+        self.assertTrue(report["static_ready"])
+        self.assertIn("do not prove", report["acceptance_boundary"])
 
     def test_lineage_rejects_spliced_receipt(self):
         run = self._run()
