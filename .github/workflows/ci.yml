@@ -16,4 +16,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/validate_skills.py
+      - run: python scripts/sync_formats.py --check
+      - run: python scripts/privacy_scan.py
       - run: python -m unittest discover -s skills/autoresearch-task-qa/scripts -p 'test_*.py'
+      - run: python -m unittest discover -s skills/autoresearch-run-isolation/scripts -p 'test_*.py'
+      - run: python -m unittest discover -s scripts -p 'test_*.py'

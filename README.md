@@ -5,7 +5,7 @@
 [![CI](https://github.com/bosprimigenious/autoresearch-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/bosprimigenious/autoresearch-skills/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Skills](https://img.shields.io/badge/skills-6-7c3aed.svg)](skills)
-[![Tests](https://img.shields.io/badge/QA_tests-134-0f766e.svg)](skills/autoresearch-task-qa/scripts)
+[![Tests](https://img.shields.io/badge/tests-CI-0f766e.svg)](.github/workflows/ci.yml)
 
 AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Coding Agent 的完整作业体系：从判断问题是否值得优化，到建立可信 Baseline、设计任务、隔离并发运行、审查证据，再到把上下文结构化交给下一个 Agent。
 
@@ -23,8 +23,9 @@ AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Co
 - **把公平性写进流程。** Baseline、预算、指标、产物和复现条件在运行前明确，结果不能靠事后解释。
 - **证据优先，默认拒绝含糊结论。** QA 以结构化门禁检查提交、容器路径、平台接口和成对证据；缺证据就不能冒充完成。
 - **隔离不仅是目录隔离。** 同时约束运行环境、凭据、产物、时间和 Agent 上下文，降低并发研究互相污染的风险。
+- **算力决策包含容量风险。** 小卡先清功能问题，目标卡按小时做端到端 pilot，再把重租概率、恢复损失和停止条件纳入小时/包日选择。
 - **交接面向继续执行。** 输出的是下一位 Agent 可以直接接手的状态、证据、阻塞和动作，而不是一段看似完整的总结。
-- **隐私是发布门禁。** 公开包、self-check、轨迹与附件逐件检查，不让“主包已脱敏”成为旁路泄露的借口。
+- **隐私是发布门禁。** 公开包、self-check、轨迹与附件逐件检查；CI 额外阻断本机路径、私有协作链接、邮箱、内网地址和常见凭据形态。
 
 ## 六个协同 Skill
 
@@ -33,7 +34,7 @@ AutoResearch Skills 不是一组零散提示词，而是一套面向研究型 Co
 | [`autoresearch-optimization-surface`](skills/autoresearch-optimization-surface) | 判断任务是否存在足够的研究自由度 | 方法空间、固定项、可变项与反例 |
 | [`autoresearch-baseline-quality`](skills/autoresearch-baseline-quality) | 审查基线是否合理、公平、可复现 | Baseline 质量结论与修复清单 |
 | [`autoresearch-task-authoring`](skills/autoresearch-task-authoring) | 把论文或代码仓变成可执行的研究任务 | 任务契约、预算、指标、验收与交付结构 |
-| [`autoresearch-run-isolation`](skills/autoresearch-run-isolation) | 设计多 Agent 并发运行的隔离边界 | 工作区、凭据、产物与时限约束 |
+| [`autoresearch-run-isolation`](skills/autoresearch-run-isolation) | 设计双轨运行、GPU 租赁、恢复与隔离边界 | 容量计划、工作区、血缘、产物与时限约束 |
 | [`autoresearch-task-qa`](skills/autoresearch-task-qa) | 对任务包和证据执行 fail-closed 审查 | 分层 QA 结论、失败项与可复核证据 |
 | [`autoresearch-conversation-handoff`](skills/autoresearch-conversation-handoff) | 把本轮研究交给下一位 Agent 继续 | 可执行交接包，而非叙述性摘要 |
 
@@ -77,12 +78,18 @@ ln -s "$PWD/skills/autoresearch-task-qa" \
 
 ## 可执行验证
 
-项目不是靠 README 自证。仓库提供结构校验、静态 QA 与 134 个回归测试：
+项目不是靠 README 自证。仓库提供结构校验、派生格式漂移检查、隐私扫描、静态 QA 与回归测试：
 
 ```sh
 python3 scripts/validate_skills.py
+python3 scripts/sync_formats.py --check
+python3 scripts/privacy_scan.py
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s skills/autoresearch-task-qa/scripts -p 'test_*.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s skills/autoresearch-run-isolation/scripts -p 'test_*.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s scripts -p 'test_*.py'
 ```
 
 GitHub Actions 会在每次 push 和 pull request 上执行同一组检查。
@@ -110,9 +117,12 @@ autoresearch-skills/
 │       ├── CLAUDE.md        # Claude Code 兼容格式
 │       ├── agents/          # Agent 元数据
 │       ├── references/      # 规范、清单与方法参考
+│       ├── assets/          # 可复制的通用模板（按需）
 │       └── scripts/         # 静态 QA 与测试（按需）
 ├── scripts/
-│   └── validate_skills.py   # 仓库级结构校验
+│   ├── validate_skills.py   # 仓库级结构校验
+│   ├── sync_formats.py      # 从 SKILL.md 生成兼容格式
+│   └── privacy_scan.py      # 不回显命中值的隐私门禁
 └── .github/workflows/ci.yml # 持续集成门禁
 ```
 
