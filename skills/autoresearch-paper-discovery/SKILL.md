@@ -9,13 +9,15 @@ description: 自主检索、去重并筛选可转化为 AutoResearch 优化任�
 
 ## 执行顺序
 
-1. **冻结搜索合同。** 写明领域、年份、任务类型、允许的训练/推理规模、目标指标、预算上限、目标 Harness/backend 和排除项。搜索过程中若改变合同，保留新版本，不静默改筛选口径。
+1. **冻结搜索合同。** 写明选题模式、领域、年份、任务类型、允许的训练/推理规模、目标指标、预算上限、目标 Harness/backend 和排除项。先按 [选题平台的两种模式](references/selection-modes.md) 区分候选池内快选与专家自主提交；搜索过程中若改变合同，保留新版本，不静默改筛选口径。
 2. **多源召回。** 至少使用两个互补的学术来源：arXiv 提供预印本与版本信息，OpenAlex 提供开放学术图谱检索，Semantic Scholar 提供标题匹配、引用/参考网络与外部标识。接口和限流注意事项见 [source-apis.md](references/source-apis.md)。
 3. **规范化与去重。** 优先按 DOI、arXiv ID、OpenAlex ID、Semantic Scholar paper ID 合并，再按规范 URL；只剩标题相同时保守处理同名冲突。可用 `scripts/deduplicate_candidates.py` 生成合并结果和待人工复核项。
 4. **核查原始证据。** 打开论文主页、论文版本、官方源码仓库和许可证文件。聚合站的 `openAccess`、代码链接或许可证字段不能替代原始证据。没有明确源码许可证时标记 `UNKNOWN`，不能推断为可再分发。
 5. **做题目预检。** 对每篇论文检查可修改的算法接口、可信 baseline、独立 evaluator、指标方向、随机性协议、效应与噪声、资源上界、容器化和目标 Harness/backend 能力。详细硬门槛见 [candidate-gates.md](references/candidate-gates.md)。
 6. **查权威题库。** 通过当前任务配置的 authoritative duplicate registry 按规范标题、论文 URL 和 canonical IDs 查询，并记录数据版本、查询时间、请求摘要和原始响应引用。无法访问、数据未更新或只查本地候选池时，结论必须是 `UNKNOWN`，不能写“未重复”。
 7. **写候选账本并决策。** 按 [candidate-ledger.md](references/candidate-ledger.md) 留下来源、证据和每个门槛的 `PASS`/`FAIL`/`UNKNOWN`。硬门槛有 `FAIL` 就拒绝；有 `UNKNOWN` 就进入补证，不得用热度或引用数抵消。
+
+候选池模式可用 `scripts/rank_candidates.py` 在所有硬门槛结论之后排序；默认先排可推荐项，再在同一结论层内优先无需 GPU、pilot 成本低且时间短的候选。该排序器不会用 CPU、低价或短时长抵消失败门槛。
 
 ## 发现策略
 

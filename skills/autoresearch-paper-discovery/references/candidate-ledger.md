@@ -6,6 +6,7 @@
 
 ```yaml
 candidate_id: stable-local-id
+selection_mode: pool  # or expert_self_selection
 title: exact paper title
 identifiers:
   doi: null
@@ -49,8 +50,11 @@ effect_noise:
   effect_summary: null
   noise_summary: null
 resources:
+  requires_gpu: null
   development: null
   formal: null
+  pilot_cost_upper_bound: null
+  pilot_hours_upper_bound: null
   upper_bound: null
   recovery_plan: null
 delivery:
